@@ -15,8 +15,11 @@ package prober
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"io/ioutil"
 	"net"
@@ -201,10 +204,20 @@ func ProbeHTTP(ctx context.Context, target string, module config.Module, registr
 			Name: "probe_http_duration_seconds",
 			Help: "Duration of http request by phase, summed over all redirects",
 		}, []string{"phase"})
+
 		contentLengthGauge = prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "probe_http_content_length",
 			Help: "Length of http content response",
 		})
+
+		probeHTTPChecksum = prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "probe_http_content_checksum",
+				Help: "Contains the SHA-256 checksum of the page body",
+			},
+			[]string{"sha256"},
+		)
+
 		bodyUncompressedLengthGauge = prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "probe_http_uncompressed_body_length",
 			Help: "Length of uncompressed response body",
@@ -419,10 +432,24 @@ func ProbeHTTP(ctx context.Context, target string, module config.Module, registr
 		}
 
 		if resp != nil && !requestErrored {
-			respBodyBytes, err = io.Copy(ioutil.Discard, resp.Body)
+			w := ioutil.Discard
+
+			// Set the writer to a checksum if so configured
+			if httpConfig.ExportChecksum {
+				w = sha256.New()
+			}
+
+			// Discard or hash the response body
+			respBodyBytes, err = io.Copy(w, resp.Body)
 			if err != nil {
 				level.Info(logger).Log("msg", "Failed to read HTTP response body", "err", err)
 				success = false
+			}
+
+			// Export the hash value
+			if success && httpConfig.ExportChecksum {
+				registry.MustRegister(probeHTTPChecksum)
+				probeHTTPChecksum.WithLabelValues(hex.EncodeToString(w.(hash.Hash).Sum(nil))).Set(1)
 			}
 
 			resp.Body.Close()

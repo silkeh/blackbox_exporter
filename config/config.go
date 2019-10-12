@@ -139,6 +139,7 @@ type HTTPProbe struct {
 	FailIfHeaderNotMatchesRegexp []HeaderMatch           `yaml:"fail_if_header_not_matches,omitempty"`
 	Body                         string                  `yaml:"body,omitempty"`
 	HTTPClientConfig             config.HTTPClientConfig `yaml:"http_client_config,inline"`
+	ExportChecksum               bool                    `yaml:"export_checksum,omitempty"`
 }
 
 type HeaderMatch struct {

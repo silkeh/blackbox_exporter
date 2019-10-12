@@ -99,6 +99,9 @@ The other placeholders are specified separately.
   # The body of the HTTP request used in probe.
   body: [ <string> ]
 
+  # Export the SHA256 checksum of the response body.
+  # NOTE: only use this on resources that seldom change, as it may lead to high label cardinality.
+  [ export_checksum: <boolean> | default = false ]
 
 ```
 
