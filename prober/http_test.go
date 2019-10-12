@@ -744,3 +744,55 @@ func TestCookieJar(t *testing.T) {
 		t.Fatalf("Redirect test failed unexpectedly, got %s", body)
 	}
 }
+
+func TestHTTPContent(t *testing.T) {
+	tests := []struct {
+		Body   []byte
+		SHA256 string
+	}{
+		{nil, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},
+		{[]byte("testVector"), "9a85c8667798425f82e41d72a4bf3c5901ccfb726f62868048ddbc1934ab18ad"},
+	}
+	for _, test := range tests {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Write(test.Body)
+		}))
+		defer ts.Close()
+
+		module := config.Module{
+			Timeout: time.Second,
+			HTTP: config.HTTPProbe{
+				IPProtocolFallback: true,
+				ExportChecksum: true,
+			},
+		}
+		registry := prometheus.NewRegistry()
+		testCTX, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		if !ProbeHTTP(testCTX, ts.URL, module, registry, log.NewNopLogger()) {
+			t.Fatalf("HTTP module failed, expected success.")
+		}
+
+		// Get the resulting metrics.
+		mfs, err := registry.Gather()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Check labels
+		expectedLabels := map[string]map[string]string{
+			"probe_http_content_checksum": {
+				"sha256": test.SHA256,
+			},
+		}
+		checkRegistryLabels(expectedLabels, mfs, t)
+
+		// Check values
+		expectedResults := map[string]float64{
+			"probe_http_content_length":   float64(len(test.Body)),
+			"probe_http_content_checksum": 1,
+		}
+		checkRegistryResults(expectedResults, mfs, t)
+	}
+}
